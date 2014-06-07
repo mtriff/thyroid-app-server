@@ -28,80 +28,12 @@ app.use(express.bodyParser());
 app.use(allowCrossDomain);
 
 // // Get all records associated with the given user
-// app.post('/getRecords', function(request, response) {
-//   console.log('Sending records');
-//   if (!request.body.email || !request.body.password) {
-//     return response.send(400, 'Missing log in information.');
-//   }
-//   getRecords(request, function(err, result) {
-//     return response.send(200, result);
-//   });
-// });
-
-// // Helper function to get all records for a given user
-// function getRecords(request, callback) {
-//   console.log('Retrieving records.')
-//   var query = database.query('SELECT records.date, records.tsh, records.tg, records.synthroidDose '
-//     + ' FROM records, user ' + 'WHERE records.user=user.email' + ' AND user.email=? AND user.password=PASSWORD(?)' + ' ORDER BY records.date DESC', [request.body.email,
-//     request.body.password
-//   ], callback);
-// }
-
-// // Updates the records in the database with the provided records
-// app.post('/syncRecords', function(request, response) {
-//   console.log('Save Records Request Received.');
-
-//   if (!request.body.email || !request.body.password) {
-//     return response.send(400, 'Missing log in information.');
-//   }
-
-//   var query = database.query('SELECT email FROM user WHERE email=? AND password=PASSWORD(?)', [request.body.email,
-//     request.body.password
-//   ], function(err, result) {
-//     if (err) {
-//       return response.send(400, 'Error logging user in.');
-//     }
-//     if (!result) {
-//       return response.send(400, 'Invalid user credentials.');
-//     }
-//     getRecords(request, function() {
-//       var newRecords = request.body.newRecords;
-//       var recordsToSave = [];
-//       for (var i = 0; i < newRecords.length; i++) {
-//         var newRecord = [request.body.email, newRecords[i].date, newRecords[i].tsh, newRecords[i].tg, newRecords[i].synthroidDose];
-//         recordsToSave.push(newRecord);
-//       }
-//       syncRecords(request, response, recordsToSave);
-//     });
-//   });
-// });
-
-// // Helper function to remove all old records and insert all new records
-// //  We do this instead of a combination of UPDATE and
-// //  INSERT statements to simplify this process
-// function syncRecords(request, response, recordsToSave) {
-//   var deleteQuery = database.query('DELETE FROM records WHERE user=?', [request.body.email], function(err, result) {
-//     if(err) {
-//       return response.send(400, 'Error occurred syncing records');
-//     }
-//     var insertQuery = database.query('INSERT INTO records (user, date, tsh, tg, synthroidDose) VALUES ?', [recordsToSave], function(err, result) {
-//       if(err) {
-//         return response.send(400, 'Error occurred syncing records');
-//       }
-//       return response.send(200, 'Records synced.');
-//     });
-//   });
-// }
-
-// // Uses a email address and password to retrieve a user from the database
-app.post('/login', function(request, response) {
-  console.log('Logging user in');
-
+app.post('/getRecords', function(request, response) {
+  console.log('Sending records');
   if (!request.body.email || !request.body.password) {
     return response.send(400, 'Missing log in information.');
   }
-
-  var query = usersCollection.find({
+  usersCollection.find({
     email: request.body.email
   }, function(err, result) {
     if (err) {
@@ -114,7 +46,106 @@ app.post('/login', function(request, response) {
       if (!foundUser) {
         return response.send(400, 'User not found.');
       }
-      console.log(foundUser);
+      if (!bcrypt.compareSync('' + request.body.password, foundUser.password)) {
+        return response.send(400, 'Invalid password');
+      }
+      getRecords(request, function(err, result) {
+        result.toArray(function(err, resultArray) {
+          if (err) {
+            return response.send(400, 'An error occurred retrieving records.');
+          }
+          return response.send(200, resultArray);
+        });
+      });
+    });
+  });
+});
+
+// Helper function to get all records for a given user
+function getRecords(request, callback) {
+  console.log('Retrieving records.')
+  recordsCollection.find({
+    user: request.body.email
+  }, callback);
+}
+
+// Updates the records in the database with the provided records
+app.post('/syncRecords', function(request, response) {
+  console.log('Save Records Request Received.');
+
+  if (!request.body.email || !request.body.password) {
+    return response.send(400, 'Missing log in information.');
+  }
+
+  usersCollection.find({
+    email: request.body.email
+  }, function(err, result) {
+    if (err) {
+      throw err;
+    }
+    result.next(function(err, foundUser) {
+      if (err) {
+        throw err;
+      }
+      if (!foundUser) {
+        return response.send(400, 'User not found.');
+      }
+      if (!bcrypt.compareSync('' + request.body.password, foundUser.password)) {
+        return response.send(400, 'Invalid password');
+      }
+      getRecords(request, function() {
+        var newRecords = request.body.newRecords;
+        for (var i = 0; i < newRecords.length; i++) {
+          newRecords[i].user = request.body.email;
+          delete newRecords[i]._id;
+        }
+        syncRecords(request, response, newRecords);
+      });
+    });
+  });
+});
+
+// Helper function to remove all old records and insert all new records
+//  We do this instead of a combination of UPDATE and
+//  INSERT statements to simplify this process
+function syncRecords(request, response, recordsToSave) {
+  recordsCollection.remove({
+    email: request.body.email
+  }, null, function(err) {
+    if (err) {
+      return response.send(400, 'Error occurred syncing records');
+    }
+    recordsCollection.insert(recordsToSave, function(err, result) {
+      if (err) {
+        console.log(err);
+        return response.send(400, 'Error occurred syncing records');
+      }
+      return response.send(200, 'Records synced.');
+    });
+  });
+}
+
+// Uses a email address and password to retrieve a user from the database
+app.post('/login', function(request, response) {
+  console.log('Logging user in');
+
+  if (!request.body.email || !request.body.password) {
+    return response.send(400, 'Missing log in information.');
+  }
+
+  usersCollection.find({
+    email: request.body.email
+  }, function(err, result) {
+    if (err) {
+      throw err;
+    }
+    result.next(function(err, foundUser) {
+      if (err) {
+        throw err;
+      }
+      if (!foundUser) {
+        return response.send(400, 'User not found.');
+      }
       if (!bcrypt.compareSync('' + request.body.password, foundUser.password)) {
         return response.send(400, 'Invalid password');
       }
@@ -156,46 +187,44 @@ app.post('/saveNewUser', function(request, response) {
   });
 });
 
-// // Same as front end code, used to format a Date object appropriately
-// function formatDateOfBirth(dateString) {
-//   var date = new Date(dateString);
-//   var month = date.getMonth()+1;
-//   var day = date.getDate();
-//   var year = date.getFullYear();
-//   return year + '-' +
-//     ((''+month).length<2 ? '0' : '') + month + '-' +
-//     ((''+day).length<2 ? '0' : '') + day;
-// }
-
-// // Update user information
-// app.post('/updateUser', function(request, response) {
-//   console.log('User being updated.');
-//   var user = request.body;
-//   if(!user.newPassword) {
-//     user.newPassword = user.password;
-//   }
-//   var query = database.query('UPDATE user SET password=PASSWORD(?), firstName=?, lastName=?, healthCardNumber=?, dateOfBirth=?, cancerType=?, cancerStage=?, tshRange=?, agreedToLegal=? '
-//     + 'WHERE email=? and password=PASSWORD(?)', [user.newPassword,
-//     user.firstName,
-//     user.lastName,
-//     user.healthCardNumber,
-//     formatDateOfBirth(user.dateOfBirth),
-//     user.cancerType,
-//     user.cancerStage,
-//     user.tshRange,
-//     user.agreedToLegal,
-//     user.email,
-//     user.password
-//   ], function(err, result) {
-//     if (err) {
-//       console.log(err);
-//       return response.send(400, 'An error occurred creating this user.');
-//     }
-//     return response.json(200, 'User created successfully!');
-//   });
-// });
-
-// Close the database connection and server when the application ends
+// Update user information
+app.post('/updateUser', function(request, response) {
+  console.log('User being updated.');
+  var user = request.body;
+  var query = usersCollection.find({
+    email: request.body.email
+  }, function(err, result) {
+    if (err) {
+      throw err;
+    }
+    result.next(function(err, foundUser) {
+      if (err) {
+        return response.send(400, 'An error occurred finding a user to update.');
+      }
+      if (!foundUser) {
+        return response.send(400, 'User not found.');
+      }
+      if (!bcrypt.compareSync('' + request.body.password, foundUser.password)) {
+        return response.send(400, 'Invalid password.');
+      }
+      if (user.newPassword) {
+        var salt = bcrypt.genSaltSync(10);
+        var passwordString = '' + user.newPassword;
+        user.password = bcrypt.hashSync(passwordString, salt);
+      }
+      delete user._id;
+      usersCollection.update({
+        email: user.email
+      }, user, null, function(err) {
+        if (err) {
+          console.log(err);
+          return response.send(400, 'An error occurred updating users information.');
+        }
+        return response.send(200, foundUser);
+      });
+    });
+  });
+});
 
 mongodb.connect(connectionString, function(error, db) {
   if (error) {
@@ -205,6 +234,7 @@ mongodb.connect(connectionString, function(error, db) {
   usersCollection = db.collection('users');
   recordsCollection = db.collection('records');
 
+  // Close the database connection and server when the application ends
   process.on('SIGTERM', function() {
     console.log("Shutting server down.");
     db.close();
