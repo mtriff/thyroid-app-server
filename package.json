@@ -17,7 +17,8 @@
   },
   "homepage": "https://github.com/mtriff/thyroid-app-server",
   "dependencies": {
+    "bcrypt": "0.7.x",
     "express": "3.x",
-    "mysql": "2.3.x"  
+    "mongodb": "1.4.x" 
   }
 }
