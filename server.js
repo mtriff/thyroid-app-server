@@ -50,9 +50,12 @@ app.post('/getRecords', function(request, response) {
         return response.send(400, 'Invalid password');
       }
       getRecords(request, function(err, result) {
+        if (err) {
+          return response.send(400, 'An error occurred retrieving records.');
+        }
         result.toArray(function(err, resultArray) {
           if (err) {
-            return response.send(400, 'An error occurred retrieving records.');
+            return response.send(400, 'An error occurred processing your records.');
           }
           return response.send(200, resultArray);
         });
@@ -93,14 +96,12 @@ app.post('/syncRecords', function(request, response) {
       if (!bcrypt.compareSync('' + request.body.password, foundUser.password)) {
         return response.send(400, 'Invalid password');
       }
-      getRecords(request, function() {
-        var newRecords = request.body.newRecords;
-        for (var i = 0; i < newRecords.length; i++) {
-          newRecords[i].user = request.body.email;
-          delete newRecords[i]._id;
-        }
-        syncRecords(request, response, newRecords);
-      });
+      var newRecords = request.body.newRecords;
+      for (var i = 0; i < newRecords.length; i++) {
+        newRecords[i].user = request.body.email;
+        delete newRecords[i]._id;
+      }
+      syncRecords(request, response, newRecords);
     });
   });
 });
